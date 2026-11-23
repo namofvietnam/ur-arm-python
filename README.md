@@ -4,12 +4,16 @@ Send a joint move to a UR10e running PolyScope 5. `send_move.py` uses the contro
 
 ## Read the arm first
 
-From the repo folder, using Python 3.10 or newer in your virtual environment, run these commands. Replace `ROBOT_IP` with the controller's IP address. The first controller command reads the six joint angles in degrees.
+From the repo folder, create and activate a Python 3.12 virtual environment, then install the requirements. The pinned `ur-rtde` release has a Windows wheel for Python 3.12, so it does not require a local C++/Boost build.
 
-```bash
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python send_move.py ROBOT_IP
 ```
+
+Replace `ROBOT_IP` with the controller's IP address. The first controller command reads the six joint angles in degrees.
 
 Your computer needs network access to RTDE on TCP 30004. In PolyScope, check **Settings → Security → Services** if that service is disabled.
 
