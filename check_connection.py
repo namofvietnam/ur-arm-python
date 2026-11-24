@@ -9,7 +9,7 @@ import sys
 from collections.abc import Sequence
 from math import degrees, isfinite, radians
 
-ROBOT_IP = ""  # Enter the controller IP here, e.g. "192.168.0.10".
+ROBOT_IP = "192.168.0.101"  # Enter the controller IP here, e.g. "192.168.0.10".
 RTDE_PORT = 30004  # Standard Universal Robots RTDE API port.
 TIMEOUT_SECONDS = 5
 
