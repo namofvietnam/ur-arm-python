@@ -1,0 +1,28 @@
+services:
+  ursim:
+    image: universalrobots/ursim_e-series:5.13.1
+    platform: linux/amd64
+    environment:
+      ROBOT_MODEL: UR10
+    ports:
+      - "127.0.0.1:6080:6080"
+      - "127.0.0.1:29999:29999"
+      - "127.0.0.1:30003:30003"
+      - "127.0.0.1:30004:30004"
+
+  ursim-x:
+    profiles: [polyscope-x]
+    image: universalrobots/ursim_polyscopex:10.12.1
+    platform: linux/amd64
+    privileged: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      HOST_ARCH: amd64
+      ROBOT_TYPE: UR10
+    ports:
+      - "127.0.0.1:6081:80"
+      - "127.0.0.1:30001:30001"
+      - "127.0.0.1:30002:30002"
+      - "127.0.0.1:30003:30003"
+      - "127.0.0.1:30004:30004"

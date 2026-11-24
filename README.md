@@ -4,7 +4,7 @@ Read joint positions, TCP pose and controller modes, or send a joint move from P
 
 ## Install
 
-Use 64-bit Intel or AMD Linux with Python 3.10 through 3.14. Python 3.12 works with the pinned `ur-rtde` wheel. On Windows, you can run the project in WSL Ubuntu using the steps below, or run natively in PowerShell with Python 3.12. [Published wheels for ur-rtde 1.6.6](https://pypi.org/project/ur-rtde/1.6.6/#files)
+Use Python 3.12 on a 64-bit Intel or AMD machine. The pinned `ur-rtde` release provides wheels for Linux and native Windows. You can also use WSL Ubuntu on Windows. [Published wheels for ur-rtde 1.6.5](https://pypi.org/project/ur-rtde/1.6.5/#files)
 
 Run these commands from the repo folder in a Linux terminal.
 
@@ -19,13 +19,8 @@ For native Windows PowerShell, create and activate a Python 3.12 virtual environ
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python send_move.py ROBOT_IP
+python -m pip install --only-binary=ur-rtde -e .
 ```
-
-Replace `ROBOT_IP` with the controller's IP address. The first controller command reads the six joint angles in degrees.
-
-Your computer needs network access to RTDE on TCP 30004. In PolyScope, check **Settings → Security → Services** if that service is disabled.
 
 ### Windows and VS Code
 
@@ -35,28 +30,44 @@ Open Ubuntu and run `sudo apt update` followed by `sudo apt install -y python3-v
 
 Install Microsoft's WSL extension in VS Code and run `code .` from the Ubuntu terminal. In the WSL window, select `.venv/bin/python` or `.venv-wsl/bin/python` using **Python: Select Interpreter**. [VS Code WSL guide](https://code.visualstudio.com/docs/remote/wsl)
 
-## Try it in URSim
+## Test movement at home in URSim
 
-Start an e-Series URSim instance. With Docker, the following command publishes the simulator UI and controller interfaces to your local machine.
+Start Docker Desktop in Linux containers mode on Windows. Use the VS Code PowerShell terminal with your Windows Python venv active so Python and Docker use the same localhost. From the repo folder, start the virtual UR10e with PolyScope 5.13.1.
 
 ```bash
-docker run --rm --name ursim \
-  -e ROBOT_MODEL=UR10 \
-  -p 127.0.0.1:6080:6080 \
-  -p 127.0.0.1:29999:29999 \
-  -p 127.0.0.1:30003:30003 \
-  -p 127.0.0.1:30004:30004 \
-  universalrobots/ursim_e-series
+docker compose up -d ursim
 ```
 
 1. Open [the simulator UI](http://127.0.0.1:6080/vnc.html) and connect. Confirm the safety configuration if prompted, then power on the simulated arm and press **Start** on the initialization screen.
 2. In PolyScope, enable **Settings → System → Remote Control**, then select **Remote Control** in the upper-right mode menu. Under **Settings → Security → Services**, enable RTDE for status and the Dashboard Server and Real-time Interface for motion if they are disabled.
-3. Read the live state, then run the example to move only the last joint by five degrees from its current position.
+3. With your Python venv active, check the connection, read the joints, and run the 5 cm move.
 
 ```bash
-ur-arm --host 127.0.0.1 status
+python check_connection.py --sim
+python check_connection.py --sim --joints
+python check_connection.py --sim --move-x-5cm
+```
+
+`--sim` connects to `127.0.0.1` regardless of the saved `ROBOT_IP`. The last command moves the tool 5 cm along the robot base's positive X axis at 2 cm/s and prints the displacement measured through RTDE. Each invocation uses the current pose. Reset the pose in the simulator before repeating if the arm is near a travel limit.
+
+For joint-space motion, this example adds five degrees to the last joint.
+
+```bash
 python examples/move_joint.py --execute
 ```
+
+Stop the simulator with `docker compose stop ursim`.
+
+### PolyScope X 10.12.1 option
+
+This profile uses Universal Robots' matching simulator image for the `10.12.1.0` controller. The vendor's image runs in privileged mode. The two simulators share the localhost RTDE ports, so stop the first before starting the second. [Universal Robots PolyScope X simulator](https://hub.docker.com/r/universalrobots/ursim_polyscopex)
+
+```bash
+docker compose stop ursim
+docker compose up -d ursim-x
+```
+
+Open `http://127.0.0.1:6081`, initialize the virtual arm, and enable RTDE and the controller services needed for remote scripting under **Settings → Security → Services**. Run `python check_connection.py --sim` first and confirm the version is `10.12.1` before attempting the move above. The movement workflow was verified on the PolyScope 5 simulator. PolyScope X motion still needs its own verification.
 
 ## Send commands
 

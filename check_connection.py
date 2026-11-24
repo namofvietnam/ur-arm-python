@@ -8,7 +8,7 @@ import struct
 import sys
 from collections.abc import Sequence
 from contextlib import contextmanager
-from math import degrees, isfinite, radians
+from math import degrees, dist, isfinite, radians
 
 ROBOT_IP = "192.168.0.101"  # Enter the controller IP here, e.g. "192.168.0.10".
 RTDE_PORT = 30004  # Standard Universal Robots RTDE API port.
@@ -82,23 +82,42 @@ def move_j(host: str, target_rad: Sequence[float]) -> None:
             raise RuntimeError("The controller did not report a completed joint move")
 
 
-def move_x_5cm(host: str) -> None:
-    """Move the TCP 5 cm along base +X, keeping its orientation fixed."""
+def read_tcp_pose(host: str) -> list[float]:
     from rtde_receive import RTDEReceiveInterface
 
     receiver = RTDEReceiveInterface(host, variables=["actual_TCP_pose"])
     try:
-        target = list(receiver.getActualTCPPose())
+        pose = list(receiver.getActualTCPPose())
     finally:
         receiver.disconnect()
 
-    if len(target) != 6 or not all(isfinite(value) for value in target):
+    if len(pose) != 6 or not all(isfinite(value) for value in pose):
         raise RuntimeError("The controller did not return a valid TCP pose")
+    return pose
+
+
+def move_x_5cm(host: str) -> None:
+    """Move the TCP 5 cm along base +X, keeping its orientation fixed."""
+    start = read_tcp_pose(host)
+    target = start.copy()
     target[0] += 0.05
 
     with control_session(host) as controller:
         if not controller.moveL(target, 0.02, 0.05, False):
             raise RuntimeError("The controller did not report a completed X move")
+
+    try:
+        actual = read_tcp_pose(host)
+    except (OSError, RuntimeError) as error:
+        raise RuntimeError(f"Move reported complete, but TCP readback failed. {error}") from error
+    displacement_cm = (actual[0] - start[0]) * 100
+    position_error_mm = dist(actual[:3], target[:3]) * 1000
+    if position_error_mm > 2:
+        raise RuntimeError(
+            f"TCP moved {displacement_cm:+.2f} cm along base X and is "
+            f"{position_error_mm:.1f} mm from the target"
+        )
+    print(f"Move complete. Measured base X change {displacement_cm:+.2f} cm.")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -108,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         allow_abbrev=False,
     )
     parser.add_argument("host", nargs="?", help="override ROBOT_IP with a controller IP address")
+    parser.add_argument("--sim", action="store_true", help="use the local simulator at 127.0.0.1")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--joints", action="store_true", help="read the current joint angles in degrees")
     mode.add_argument("--move-x-5cm", action="store_true", help="move the tool 5 cm along base +X")
@@ -120,14 +140,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    host = (args.host or ROBOT_IP).strip()
+    if args.sim and args.host is not None:
+        parser.error("--sim connects to 127.0.0.1. Omit the host argument.")
+    host = "127.0.0.1" if args.sim else (args.host or ROBOT_IP).strip()
     if not host:
         parser.error("enter the controller's IP in ROBOT_IP at the top of this file or pass it as an argument")
 
     try:
         if args.move_x_5cm:
             move_x_5cm(host)
-            print("5 cm move along base +X complete.")
         elif args.move_deg is not None:
             move_j(host, [radians(angle) for angle in args.move_deg])
             print("Joint move complete.")
@@ -138,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
             check_connection(host)
     except ImportError as error:
         print(f"Could not load ur-rtde — {error}", file=sys.stderr)
-        print("Install the dependency in your WSL Ubuntu virtual environment with", file=sys.stderr)
+        print("Install the dependency in your Python virtual environment with", file=sys.stderr)
         print("  python -m pip install -r requirements.txt", file=sys.stderr)
         return 1
     except (OSError, RuntimeError, ValueError) as error:
