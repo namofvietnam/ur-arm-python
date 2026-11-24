@@ -7,6 +7,7 @@ import socket
 import struct
 import sys
 from collections.abc import Sequence
+from contextlib import contextmanager
 from math import degrees, isfinite, radians
 
 ROBOT_IP = "192.168.0.101"  # Enter the controller IP here, e.g. "192.168.0.10".
@@ -56,23 +57,48 @@ def read_joints(host: str) -> list[float]:
         receiver.disconnect()
 
 
+@contextmanager
+def control_session(host: str):
+    from rtde_control import RTDEControlInterface
+
+    controller = RTDEControlInterface(host)
+    try:
+        yield controller
+    finally:
+        try:
+            controller.stopScript()
+        finally:
+            controller.disconnect()
+
+
 def move_j(host: str, target_rad: Sequence[float]) -> None:
     """Move to six joint angles in radians and wait for completion."""
     target = list(target_rad)
     if len(target) != 6 or not all(isfinite(angle) for angle in target):
         raise ValueError("Provide six finite joint angles")
 
-    from rtde_control import RTDEControlInterface
-
-    controller = RTDEControlInterface(host)
-    try:
+    with control_session(host) as controller:
         if not controller.moveJ(target, 0.2, 0.3, False):
             raise RuntimeError("The controller did not report a completed joint move")
+
+
+def move_x_5cm(host: str) -> None:
+    """Move the TCP 5 cm along base +X, keeping its orientation fixed."""
+    from rtde_receive import RTDEReceiveInterface
+
+    receiver = RTDEReceiveInterface(host, variables=["actual_TCP_pose"])
+    try:
+        target = list(receiver.getActualTCPPose())
     finally:
-        try:
-            controller.stopScript()
-        finally:
-            controller.disconnect()
+        receiver.disconnect()
+
+    if len(target) != 6 or not all(isfinite(value) for value in target):
+        raise RuntimeError("The controller did not return a valid TCP pose")
+    target[0] += 0.05
+
+    with control_session(host) as controller:
+        if not controller.moveL(target, 0.02, 0.05, False):
+            raise RuntimeError("The controller did not report a completed X move")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -84,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("host", nargs="?", help="override ROBOT_IP with a controller IP address")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--joints", action="store_true", help="read the current joint angles in degrees")
+    mode.add_argument("--move-x-5cm", action="store_true", help="move the tool 5 cm along base +X")
     mode.add_argument(
         "--move-deg",
         metavar="ANGLE",
@@ -98,7 +125,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("enter the controller's IP in ROBOT_IP at the top of this file or pass it as an argument")
 
     try:
-        if args.move_deg is not None:
+        if args.move_x_5cm:
+            move_x_5cm(host)
+            print("5 cm move along base +X complete.")
+        elif args.move_deg is not None:
             move_j(host, [radians(angle) for angle in args.move_deg])
             print("Joint move complete.")
         elif args.joints:
